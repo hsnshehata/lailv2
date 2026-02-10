@@ -1,0 +1,313 @@
+// Villa Lail Database Schema
+// Photo Shoot Booking Platform with Points System, Salaries, & Audit Log
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== USERS & AUTH ====================
+
+enum UserRole {
+  ADMIN
+  STAFF
+  PHOTOGRAPHER
+  CLIENT
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String
+  password      String?
+  image         String?
+  role          UserRole  @default(CLIENT)
+  phone         String?
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  photographer  Photographer?
+  staff         Staff?
+  client        Client?
+  bookings      Booking[]
+  transactions  Transaction[]
+  auditLogs     AuditLog[]
+
+  @@index([email])
+  @@index([role])
+}
+
+// ==================== PHOTOGRAPHERS ====================
+
+model Photographer {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Profile
+  bio              String?
+  specialization   String?
+  experienceYears  Int?
+  portfolio        Json?
+  galleryImages    String[]
+
+  // Points
+  pointsBalance    Int       @default(0)
+
+  // Status
+  status           String    @default("PENDING") // PENDING, ACTIVE, SUSPENDED
+  commissionRate   Float     @default(0.2) // 20% commission
+
+  // Relationships
+  bookings         Booking[]
+  pointsHistory    PointsHistory[]
+
+  @@index([status])
+  @@index([commissionRate])
+}
+
+model PointsHistory {
+  id              String   @id @default(cuid())
+  photographerId  String
+  photographer    Photographer @relation(fields: [photographerId], references: [id], onDelete: Cascade)
+
+  type            String   // EARNED, REDEEMED, BONUS, REFERRAL
+  points          Int
+  description     String
+  relatedBookingId String?  // Optional: link to booking
+  createdAt       DateTime @default(now())
+
+  @@index([photographerId])
+  @@index([type])
+}
+
+// ==================== STAFF & SALARIES ====================
+
+enum StaffPermission {
+  BOOKINGS_ONLY
+  BOOKINGS_EXPENSES
+  FULL_ACCESS
+}
+
+model Staff {
+  id              String          @id @default(cuid())
+  userId          String          @unique
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  position        String?
+  monthlySalary   Float
+  permissions     StaffPermission @default(BOOKINGS_ONLY)
+
+  // Salary Advances
+  salaryAdvances  SalaryAdvance[]
+  bookings        Booking[]
+  transactions    Transaction[]
+
+  @@index([position])
+  @@index([permissions])
+}
+
+model SalaryAdvance {
+  id              String   @id @default(cuid())
+  staffId         String
+  staff           Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  amount          Float
+  months          Int
+  monthlyDeduction Float
+  remainingMonths Int
+  isPaidOff       Boolean  @default(false)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  transactions    Transaction[]
+
+  @@index([staffId])
+  @@index([isPaidOff])
+}
+
+// ==================== CLIENTS ====================
+
+model Client {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  address         String?
+  notes           String?
+
+  bookings        Booking[]
+
+  @@index([address])
+}
+
+// ==================== BOOKINGS ====================
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum PaymentType {
+  ONLINE
+  CASH
+  STAFF
+}
+
+model Booking {
+  id              String        @id @default(cuid())
+  user            User          @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  createdBy       String?
+
+  client          Client        @relation(fields: [clientId], references: [id])
+  clientId        String
+
+  photographer    Photographer  @relation(fields: [photographerId], references: [id])
+  photographerId  String
+
+  // Booking Details
+  scheduledDate   DateTime
+  durationHours   Int
+  totalAmount     Float
+
+  // Status & Payment
+  status          BookingStatus @default(PENDING)
+  paymentType     PaymentType   @default(CASH)
+  isPaid          Boolean       @default(false)
+
+  // Staff entry
+  staffId         String?
+  staff           Staff?        @relation(fields: [staffId], references: [id])
+
+  // Relations
+  pointsHistory   PointsHistory[]
+
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([scheduledDate])
+  @@index([status])
+  @@index([photographerId])
+  @@index([clientId])
+}
+
+// ==================== ACCOUNTING ====================
+
+enum TransactionType {
+  REVENUE_BOOKING      // Booking income
+  EXPENSES_SALARY      // Staff salaries
+  EXPENSES_ADVANCE     // Salary advance
+  EXPENSES_OPERATING   // Operating costs (maintenance, utilities, etc.)
+  POINTS_REDEMPTION    // Points converted to credit
+  ADVANCE_DEDUCTION    // Monthly advance deduction
+
+model Transaction {
+  id              String          @id @default(cuid())
+  type            TransactionType
+
+  amount          Float
+  description     String?
+
+  // Relations
+  userId          String?         // Who entered the transaction
+  user            User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  salaryAdvanceId String?
+  salaryAdvance   SalaryAdvance?  @relation(fields: [salaryAdvanceId], references: [id])
+
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([type])
+  @@index([createdAt])
+}
+
+// ==================== ADMIN CONTENT ====================
+
+model Setting {
+  id              String   @id @default(cuid())
+  key             String   @unique
+  value           Json
+  updatedAt       DateTime @updatedAt
+
+  @@index([key])
+}
+
+model GalleryImage {
+  id              String   @id @default(cuid())
+  url             String
+  caption         String?
+  isMain          Boolean  @default(false)
+  order           Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  @@index([isMain])
+  @@index([order])
+}
+
+model Promotion {
+  id              String   @id @default(cuid())
+  title           String
+  description     String?
+  imageUrl        String?
+  validFrom       DateTime
+  validTo         DateTime?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  @@index([isActive])
+  @@index([validFrom])
+}
+
+// ==================== AUDIT LOG ====================
+
+enum AuditAction {
+  CREATE_BOOKING
+  UPDATE_BOOKING
+  CANCEL_BOOKING
+  CREATE_EXPENSE
+  UPDATE_SETTING
+  ADD_PHOTOGRAPHER
+  UPDATE_PHOTOGRAPHER
+  ADD_STAFF
+  UPDATE_STAFF
+  REQUEST_ADVANCE
+  DEDUCT_ADVANCE
+  MODIFY_EARNINGS
+  REDEEM_POINTS
+  ADMIN_ACTION
+}
+
+model AuditLog {
+  id              String      @id @default(cuid())
+
+  action          AuditAction
+  description     String
+
+  // Who did it
+  userId          String
+  user            User        @relation(fields: [userId], references: [id])
+
+  // Target entity (optional)
+  entityType      String?     // e.g., "Booking", "Staff", "Photographer"
+  entityId        String?
+
+  // Optional financial value
+  value           Float?
+
+  createdAt       DateTime    @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([entityType])
+}
