@@ -1,5 +1,6 @@
 import React from 'react';
 import PhotographerAlbums from '../components/PhotographerAlbums';
+import WhatsAppIcon from '../assets/whatsapp-icon.svg'; // استيراد أيقونة WhatsApp
 
 const PhotographerProfile = ({ photographer }) => {
   return (
@@ -27,6 +28,9 @@ const PhotographerProfile = ({ photographer }) => {
           <li>حجز ألبوم صور: 300$</li>
           <li>سعر عرض خاص: 200$</li>
         </ul>
+        <a href="#" className="whatsapp-button">
+          <img src={WhatsAppIcon} alt="احجز الباكدج" />
+        </a>
       </section>
     </div>
   );
